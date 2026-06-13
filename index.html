@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"/>
+<meta name="theme-color" content="#0f0f1a"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="FitTracker"/>
+<link rel="manifest" href="./manifest.json"/>
+<link rel="icon" href="./icon-192.png"/>
+<link rel="apple-touch-icon" href="./apple-touch-icon.png"/>
+<title>מעקב כושר ותזונה - תמיר</title>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+  html,body{margin:0;padding:0;background:#0f0f1a;}
+  *{-webkit-tap-highlight-color:transparent;}
+  #root{min-height:100vh;}
+  #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0f0f1a;color:#888;font-family:'Segoe UI',Tahoma,sans-serif;font-size:14px;flex-direction:column;gap:12px;}
+  #loading img{width:64px;height:64px;border-radius:16px;animation:pulse 1.4s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:0.5;transform:scale(0.96)}50%{opacity:1;transform:scale(1)}}
+</style>
+</head>
+<body>
+<div id="loading">
+  <img src="./icon-192.png" alt="טוען"/>
+  <div>טוען...</div>
+</div>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react" data-type="module">
+const { useState, useEffect, useRef } = React;
+
+
+const COLORS = {
+  run:"#22c55e", strength:"#3b82f6", rest:"#a855f7",
+  food:"#f59e0b", water:"#06b6d4", bg:"#0f0f1a", card:"#1a1a2e",
+};
+
+// ─── Day templates by type ────────────────────────────────────────────────────
+const DAY_TYPES = {
+  strength_upper: {
+    type:"strength", typeLabel:"כוח עליון 💪",
+    training:{ name:"אימון כוח – פלג עליון", duration:"45–50 דק'",
+      exercises:["מתח רחב – 4×6–8","מקבילים – 4×10–12","חתירה טבעות – 4×10","שכיבות שמיכה – 3×12","כפיפות מוט – 3×12","פלאנק – 3×45 שנ'"] },
+    meals:{ m1:{time:"13:00",name:"ארוחה ראשונה",items:"4 ביצים עין + סינטה 180 גר' + בטטה 200 גר' + סלט + שמן זית",kcal:"~980 קל' | חלבון 78 גר'"},
+            m2:{time:"20:00",name:"ארוחת ערב",items:"שייטל 250 גר' + בטטה 230 גר' + ירקות צלויים + סלט",kcal:"~1,100 קל' | חלבון 68 גר'"} },
+    kcal:2300, water:3 },
+  strength_lower: {
+    type:"strength", typeLabel:"כוח תחתון 🦵",
+    training:{ name:"אימון כוח – פלג תחתון", duration:"45–50 דק'",
+      exercises:["סקוואט גוביות – 4×12–15","Romanian deadlift – 3×12","לאנג' הולך – 3×10 לרגל","גשר ירכיים חד-רגלי – 3×12","עליות שוקיים – 4×20","פלאנק צידי – 3×35 שנ'"] },
+    meals:{ m1:{time:"13:00",name:"ארוחה ראשונה",items:"4 ביצים + 150 גר' טונה + בטטה 180 גר' + אבוקדו + ירקות",kcal:"~920 קל' | חלבון 72 גר'"},
+            m2:{time:"20:00",name:"ארוחת ערב",items:"פרגית שווארמה 300 גר' + 2 ביצים + בטטה 230 גר' + ירקות",kcal:"~1,080 קל' | חלבון 85 גר'"} },
+    kcal:2300, water:3 },
+  run_easy: {
+    type:"run", typeLabel:"ריצה קלה 🏃",
+    training:{ name:"ריצה – זון 2 | 5 ק\"מ", duration:"35–40 דק'",
+      exercises:["קצב: 6:45–7:10 דק'/ק\"מ","דופק: זון 2 – שיחה נוחה","שתייה: 500 מ\"ל לפני","שחזור: 3 ביצים + בננה אחרי"] },
+    meals:{ recovery:{time:"אחרי ריצה",name:"שחזור",items:"3 ביצים קשות + בננה",kcal:"~290 קל'"},
+            m1:{time:"13:00",name:"ארוחה ראשונה",items:"סלמון 220 גר' + 3 ביצים + תפו\"א 230 גר' + סלט + שמן זית",kcal:"~1,000 קל' | חלבון 72 גר'"},
+            m2:{time:"20:00",name:"ארוחת ערב",items:"פרגית שווארמה 300 גר' + 2 ביצים + אורז מלא 80 גר' + ירקות",kcal:"~1,100 קל' | חלבון 88 גר'"} },
+    kcal:2400, water:3.5 },
+  run_intervals: {
+    type:"run", typeLabel:"אינטרוולים ⚡",
+    training:{ name:"ריצת אינטרוולים | 6 ק\"מ", duration:"40 דק'",
+      exercises:["חימום 1.5 ק\"מ קל","4×800 מ' בקצב 5:50–6:00","מנוחה 90 שנ' בין חזרות","קירור 1 ק\"מ","שחזור: בננה + 3 ביצים תוך 30 דק'"] },
+    meals:{ recovery:{time:"אחרי ריצה",name:"שחזור חובה",items:"בננה גדולה + 3 ביצים קשות",kcal:"~300 קל'"},
+            m1:{time:"13:00",name:"ארוחה ראשונה",items:"שייטל 220 גר' + 4 ביצים + תפו\"א 230 גר' + סלט",kcal:"~1,020 קל' | חלבון 80 גר'"},
+            m2:{time:"20:00",name:"ארוחת ערב",items:"שרימפס/קלמרי 280 גר' + 2 ביצים + אורז מלא 90 גר' + ירקות",kcal:"~1,080 קל' | חלבון 72 גר'"} },
+    kcal:2500, water:3.5 },
+  run_long: {
+    type:"run", typeLabel:"לונג ראן 🔥",
+    training:{ name:"ריצה ארוכה | 8–12 ק\"מ", duration:"55–90 דק'",
+      exercises:["קצב: 7:00–7:30 דק'/ק\"מ","זון 2–3 בלבד","שתייה כל 20 דק'","שחזור: בננה + 3 ביצים מיד"] },
+    meals:{ recovery:{time:"אחרי ריצה",name:"שחזור חובה",items:"בננה + 3 ביצים קשות",kcal:"~300 קל'"},
+            m1:{time:"13:00",name:"ארוחה ראשונה",items:"סינטה 260 גר' + 3 ביצים + בטטה 280 גר' + סלט",kcal:"~1,100 קל' | חלבון 82 גר'"},
+            m2:{time:"20:00",name:"ארוחת ערב",items:"מוסר/הלבוט 230 גר' + אורז מלא 80 גר' + ירקות צלויים",kcal:"~980 קל' | חלבון 55 גר'"} },
+    kcal:2600, water:4 },
+  rest: {
+    type:"rest", typeLabel:"מנוחה פעילה 🧘",
+    training:{ name:"מנוחה פעילה", duration:"20–30 דק'",
+      exercises:["הליכה קלה 20 דק'","גלגל קצף – ירכיים ושוקיים","מתיחות קלות"] },
+    meals:{ m1:{time:"13:30",name:"ארוחה ראשונה",items:"4 ביצים שקשוקה + 150 גר' טונה + אבוקדו + ירקות",kcal:"~820 קל' | חלבון 65 גר'"},
+            m2:{time:"20:00",name:"ארוחת ערב",items:"שייטל 260 גר' + ירקות צלויים + בטטה 150 גר'",kcal:"~1,050 קל' | חלבון 65 גר'"} },
+    kcal:2200, water:3 },
+  shabbat: {
+    type:"rest", typeLabel:"שבת 😎",
+    training:{ name:"מנוחה מלאה", duration:"—", exercises:["שחזור מלא","שינה טובה","ארוחת פרס 🥩"] },
+    meals:{ m1:{time:"11:00",name:"ארוחת בוקר שבת",items:"שקשוקה 4 ביצים + אבוקדו + ירקות + זיתים",kcal:"~620 קל' | חלבון 30 גר'"},
+            m2:{time:"15:00",name:"ארוחת פרס 🎉",items:"סינטה/אנטריקוט 280–300 גר' + ירקות + בטטה",kcal:"~1,000 קל' | חלבון 68 גר'"} },
+    kcal:2300, water:3 },
+};
+
+// Default week plan (0=Sun)
+const DEFAULT_WEEK = ["strength_upper","run_easy","strength_lower","run_intervals","rest","run_long","shabbat"];
+
+const DAY_TYPE_OPTIONS = [
+  {id:"strength_upper", label:"כוח עליון 💪", color:"#3b82f6"},
+  {id:"strength_lower", label:"כוח תחתון 🦵", color:"#3b82f6"},
+  {id:"run_easy",       label:"ריצה קלה 🏃",  color:"#22c55e"},
+  {id:"run_intervals",  label:"אינטרוולים ⚡", color:"#22c55e"},
+  {id:"run_long",       label:"לונג ראן 🔥",  color:"#22c55e"},
+  {id:"rest",           label:"מנוחה 🧘",      color:"#a855f7"},
+  {id:"shabbat",        label:"שבת 😎",        color:"#a855f7"},
+];
+
+const DAY_NAMES = ["ראשון","שני","שלישי","רביעי","חמישי","שישי","שבת"];
+
+const SHOP_CATS = [
+  { name:"בשר אדום", icon:"🥩", color:"#ef4444", items:[{n:"סינטה",a:"600–700 גר'"},{n:"פלאט איירון / שייטל",a:"500–600 גר'"},{n:"אנטריקוט (לשבת)",a:"300 גר'"}]},
+  { name:"עוף", icon:"🍗", color:"#f59e0b", items:[{n:"פרגיות",a:"1 ק\"ג"},{n:"כמון, כורכום, פפריקה",a:"לפי מלאי"}]},
+  { name:"דגים ופירות ים", icon:"🐟", color:"#06b6d4", items:[{n:"סלמון (קפוא / טרי)",a:"500 גר'"},{n:"מוסר ים / הלבוט",a:"400 גר'"},{n:"שרימפס קפוא",a:"500 גר'"},{n:"קלמרי קפוא",a:"400 גר'"},{n:"טונה קונסרבה במים",a:"×4"},{n:"סרדינים בשמן זית",a:"×2"}]},
+  { name:"ביצים ומוצרי חלב", icon:"🥚", color:"#eab308", items:[{n:"ביצים גדולות",a:"×30"},{n:"יוגורט יווני 0%",a:"×4"},{n:"קוטג' 5%",a:"×2"}]},
+  { name:"פחמימות מורכבות", icon:"🍠", color:"#f97316", items:[{n:"בטטה",a:"2 ק\"ג"},{n:"תפוחי אדמה",a:"1.5 ק\"ג"},{n:"אורז מלא / בסמטי",a:"1 ק\"ג"},{n:"קינואה",a:"500 גר'"}]},
+  { name:"ירקות", icon:"🥦", color:"#22c55e", items:[{n:"עגבניות",a:"1 ק\"ג"},{n:"מלפפונים",a:"×6"},{n:"פלפלים",a:"×6"},{n:"ברוקולי",a:"1 ק\"ג"},{n:"קישואים",a:"×4"},{n:"גזר",a:"500 גר'"},{n:"בצל",a:"×4"},{n:"שום",a:"ראש אחד"},{n:"עגבניות שרי",a:"500 גר'"}]},
+  { name:"פירות", icon:"🍎", color:"#ec4899", items:[{n:"בננות (לשחזור ריצה)",a:"×8"},{n:"תפוחים",a:"×5"},{n:"אגסים",a:"×3"},{n:"אבוקדו",a:"×4"}]},
+  { name:"שמנים ואגוזים", icon:"🫒", color:"#84cc16", items:[{n:"שמן זית כתית מעולה",a:"בקבוק גדול"},{n:"אגוזי מלך",a:"200 גר'"},{n:"שקדים גולמיים",a:"200 גר'"},{n:"חמאת בוטנים טבעית",a:"צנצנת"},{n:"טחינה גולמית",a:"250 גר'"}]},
+  { name:"תבלינים", icon:"🧂", color:"#8b5cf6", items:[{n:"מלח גס",a:"לפי מלאי"},{n:"פפריקה מעושנת",a:"לפי מלאי"},{n:"כורכום",a:"לפי מלאי"},{n:"פטרוזיליה טרייה",a:"×2 צרורות"},{n:"לימונים",a:"×6"},{n:"רוטב סויה",a:"קטן"}]},
+  { name:"שתייה", icon:"💧", color:"#06b6d4", items:[{n:"מים מינרלים / סודה",a:"24 בקבוקים"},{n:"קפה שחור / תה",a:"לפי מלאי"}]},
+];
+
+const SK = "fitness_tamir_v5";
+function load() { try { return JSON.parse(localStorage.getItem(SK)||"{}"); } catch { return {}; } }
+function save(d) { try { localStorage.setItem(SK,JSON.stringify(d)); } catch {} }
+
+// ─── Daily Audit ──────────────────────────────────────────────────────────────
+function DailyAudit({ plan, dayIdx, mealOverrides, onMealUpdate }) {
+  const todayKey = new Date().toISOString().slice(0,10);
+  const auditKey = `audit_${todayKey}`;
+  const [result, setResult] = useState(()=>{ try{ return JSON.parse(localStorage.getItem(auditKey)||"null"); }catch{return null;} });
+  const [loading, setLoading] = useState(false);
+
+  const mealsStr = Object.entries(plan.meals).map(([k,m])=>{
+    const ov = mealOverrides?.[k];
+    return `${m.name}: ${ov ? ov.items+" – "+ov.kcal : m.items+" – "+m.kcal}`;
+  }).join("\n");
+
+  async function run() {
+    setLoading(true); setResult(null);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        model:"claude-sonnet-4-20250514", max_tokens:1000,
+        system:`אתה דיאטן קליני ספורט מוסמך (ISSN/ACSM/AND). תנתח תפריט ותחזיר JSON בלבד ללא backticks:
+{"score":1-10,"summary":"משפט אחד","positives":["..."],"warnings":["..."],"suggestions":["..."],"protein_ok":true/false,"kcal_ok":true/false,"timing_ok":true/false}
+פרופיל: תמיר 35 שנה, 101 ק"ג, 177 ס"מ, יעד ירידה 12-15 ק"ג + חצי מרתון < 2:00 שעות. צום 16/8, 2 ארוחות/יום. יעדים: ${plan.kcal} קל', חלבון 175-190 גר', שומן 65-80 גר', פחמימות 150-200 גר'.`,
+        messages:[{role:"user",content:`יום ${DAY_NAMES[dayIdx]} (${plan.typeLabel}):\n${mealsStr}`}]
+      })});
+      const d = await res.json();
+      const text = d.content?.[0]?.text||"{}";
+      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+      setResult(parsed);
+      try { localStorage.setItem(auditKey, JSON.stringify(parsed)); } catch {}
+    } catch { setResult({score:0,summary:"שגיאה – נסה שוב",positives:[],warnings:[],suggestions:[],protein_ok:false,kcal_ok:false,timing_ok:false}); }
+    setLoading(false);
+  }
+
+  const sc = s=>s>=8?"#22c55e":s>=6?"#f59e0b":"#ef4444";
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div><div style={{fontSize:14,fontWeight:700}}>🩺 וידוא תזונתי</div><div style={{fontSize:11,color:"#666"}}>דיאטן קליני ספורט מוסמך</div></div>
+        <button onClick={run} disabled={loading} style={{background:loading?"#222":"linear-gradient(135deg,#22c55e,#16a34a)",border:"none",borderRadius:11,padding:"9px 14px",color:loading?"#555":"#000",fontSize:12,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
+          {loading?"⏳ בודק...":"🔍 בדוק תפריט"}
+        </button>
+      </div>
+      {!result && !loading && <div style={{background:"#1a1a2e",borderRadius:12,padding:20,border:"1px solid #333",textAlign:"center",color:"#555",fontSize:12}}>לחץ "בדוק תפריט" לניתוח מקצועי</div>}
+      {result && result.score>0 && (
+        <div style={{background:"#1a1a2e",borderRadius:14,padding:14,border:`1px solid ${sc(result.score)}44`}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+            <div style={{width:50,height:50,borderRadius:"50%",background:`${sc(result.score)}22`,border:`2px solid ${sc(result.score)}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <span style={{fontSize:20,fontWeight:800,color:sc(result.score)}}>{result.score}</span>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:600,color:"#fff",marginBottom:5}}>{result.summary}</div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {[["✅","חלבון",result.protein_ok],["🔥","קלוריות",result.kcal_ok],["⏰","תזמון",result.timing_ok]].map(([ic,lb,ok])=>(
+                  <span key={lb} style={{fontSize:10,padding:"2px 7px",borderRadius:10,background:ok?"#22c55e22":"#ef444422",color:ok?"#22c55e":"#ef4444",border:`1px solid ${ok?"#22c55e33":"#ef444433"}`}}>{ic} {lb}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+          {result.positives?.length>0 && <div style={{marginBottom:8}}>
+            <div style={{fontSize:11,color:"#22c55e",fontWeight:600,marginBottom:4}}>✅ מה טוב</div>
+            {result.positives.map((p,i)=><div key={i} style={{fontSize:12,color:"#aaa",padding:"2px 0",display:"flex",gap:6}}><span style={{color:"#22c55e"}}>•</span>{p}</div>)}
+          </div>}
+          {result.warnings?.length>0 && <div style={{marginBottom:8,background:"#f59e0b0a",borderRadius:9,padding:"8px 10px",border:"1px solid #f59e0b33"}}>
+            <div style={{fontSize:11,color:"#f59e0b",fontWeight:600,marginBottom:4}}>⚠️ לשים לב</div>
+            {result.warnings.map((w,i)=><div key={i} style={{fontSize:12,color:"#aaa",padding:"2px 0",display:"flex",gap:6}}><span style={{color:"#f59e0b"}}>•</span>{w}</div>)}
+          </div>}
+          {result.suggestions?.length>0 && <div style={{background:"#3b82f60a",borderRadius:9,padding:"8px 10px",border:"1px solid #3b82f633"}}>
+            <div style={{fontSize:11,color:"#3b82f6",fontWeight:600,marginBottom:4}}>💡 המלצות</div>
+            {result.suggestions.map((s,i)=><div key={i} style={{fontSize:12,color:"#aaa",padding:"2px 0",display:"flex",gap:6}}><span style={{color:"#3b82f6"}}>•</span>{s}</div>)}
+          </div>}
+        </div>
+      )}
+      {result && result.score>0 && <AuditChat plan={plan} dayIdx={dayIdx} mealsStr={mealsStr} auditResult={result} onMealUpdate={onMealUpdate} mealOverrides={mealOverrides}/>}
+    </div>
+  );
+}
+
+// ─── Audit Follow-up Chat ──────────────────────────────────────────────────────
+function AuditChat({ plan, dayIdx, mealsStr, auditResult, onMealUpdate, mealOverrides }) {
+  const todayKey = new Date().toISOString().slice(0,10);
+  const chatKey = `auditchat_${todayKey}`;
+  const initMsgs = () => { try { const s=JSON.parse(localStorage.getItem(chatKey)||"null"); if(s?.length>0) return s; } catch {} return []; };
+  const [msgs, setMsgs] = useState(initMsgs);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(()=>initMsgs().length>0);
+  const [applying, setApplying] = useState(false);
+  const bottomRef = useRef(null);
+
+  useEffect(()=>{ try{localStorage.setItem(chatKey,JSON.stringify(msgs));}catch{} },[msgs]);
+  useEffect(()=>{ if(open) bottomRef.current?.scrollIntoView({behavior:"smooth"}); },[msgs,open]);
+
+  function clearChat() { try{localStorage.removeItem(chatKey);}catch{} setMsgs([]); }
+
+  async function send() {
+    if(!input.trim()||loading) return;
+    const userMsg=input.trim(); setInput("");
+    const newMsgs=[...msgs,{role:"user",content:userMsg}]; setMsgs(newMsgs); setLoading(true);
+    try {
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        model:"claude-sonnet-4-20250514",max_tokens:800,
+        system:`אתה דיאטן קליני ספורט מוסמך (ISSN/ACSM/AND), עונה על שאלות המשך לגבי הוידוא התזונתי שביצעת.
+פרופיל: תמיר 35, 101 ק"ג, 177 ס"מ, יעד ירידה 12-15 ק"ג + חצי מרתון < 2:00 שעות. צום 16/8, 2 ארוחות/יום.
+יום ${DAY_NAMES[dayIdx]} (${plan.typeLabel}). יעד: ${plan.kcal} קל', חלבון 175-190 גר', שומן 65-80 גר', פחמימות 150-200 גר'.
+
+תפריט שנבדק:\n${mealsStr}
+
+תוצאות הוידוא:
+ציון: ${auditResult.score}/10
+סיכום: ${auditResult.summary}
+חוזקות: ${(auditResult.positives||[]).join("; ")}
+אזהרות: ${(auditResult.warnings||[]).join("; ")}
+המלצות: ${(auditResult.suggestions||[]).join("; ")}
+
+ענה בעברית, קצר, מקצועי ומעשי. אם המשתמש שואל על שינוי ספציפי בתפריט - תן הצעה מדויקת עם גרמים וציין בבירור לאיזו ארוחה (ראשונה/ערב/שחזור) זה מתייחס, כדי שניתן יהיה להעביר את ההמלצה לעדכון אוטומטי.`,
+        messages:newMsgs.map(m=>({role:m.role,content:m.content}))
+      })});
+      const d=await res.json();
+      setMsgs(m=>[...m,{role:"assistant",content:d.content?.[0]?.text||"שגיאה. נסה שוב."}]);
+    } catch { setMsgs(m=>[...m,{role:"assistant",content:"שגיאת חיבור."}]); }
+    setLoading(false);
+  }
+
+  // Send a dietitian recommendation to the substitution bot, which computes exact grams and auto-applies
+  async function consultAndApply(recommendationText, sourceLabel) {
+    setApplying(true);
+    setMsgs(m=>[...m,{role:"assistant",content:`🔄 מעביר את ההמלצה לבוט התחליפים לחישוב מדויק...`}]);
+    try {
+      const instruction = `הדיאטן הקליני המליץ: "${recommendationText}"\nתרגם את ההמלצה הזו לעדכון ארוחה מדויק (גרמים + ערכים) והתאם אותה לארוחה הרלוונטית.`;
+      const { text, update } = await computeMealUpdate(instruction, plan, dayIdx, mealOverrides);
+      if(update) {
+        onMealUpdate(update.key, {items:update.items, kcal:update.kcal});
+        setMsgs(m=>[...m,{role:"assistant",content:`✅ בוט התחליפים חישב ועדכן את "${plan.meals[update.key]?.name}" אוטומטית:\n\n${update.items}\n${update.kcal}\n\n${text}\n\nתוכל לראות את השינוי בטאב "היום".`}]);
+      } else {
+        setMsgs(m=>[...m,{role:"assistant",content:`בוט התחליפים הגיב אך לא הצליח לזהות עדכון מדויק:\n\n${text||"(אין תגובה)"}`}]);
+      }
+    } catch {
+      setMsgs(m=>[...m,{role:"assistant",content:"שגיאה בתקשורת עם בוט התחליפים. נסה שוב."}]);
+    }
+    setApplying(false);
+  }
+
+
+  if(!open) return (
+    <button onClick={()=>setOpen(true)} style={{width:"100%",marginTop:10,background:"#1a1a2e",border:"1px solid #3b82f644",borderRadius:12,padding:"10px 14px",color:"#3b82f6",fontSize:12,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+      💬 התייעץ עם הדיאטן על הוידוא הזה
+    </button>
+  );
+
+  return (
+    <div style={{marginTop:10,background:"#1a1a2e",borderRadius:14,padding:10,border:"1px solid #3b82f644"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <div style={{fontSize:12,fontWeight:700,color:"#3b82f6"}}>💬 התייעצות עם הדיאטן</div>
+        <div style={{display:"flex",gap:6}}>
+          {msgs.length>0 && <button onClick={clearChat} style={{fontSize:11,padding:"3px 8px",background:"none",border:"1px solid #333",borderRadius:7,color:"#555",cursor:"pointer"}}>🗑 נקה</button>}
+          <button onClick={()=>setOpen(false)} style={{fontSize:11,padding:"3px 8px",background:"none",border:"1px solid #333",borderRadius:7,color:"#555",cursor:"pointer"}}>סגור ✕</button>
+        </div>
+      </div>
+
+      {msgs.length===0 && (
+        <div style={{fontSize:11,color:"#666",marginBottom:8,lineHeight:1.6}}>
+          שאל שאלות על הניתוח – למשל "למה הציון לא 10?", "איך אפשר לשפר את התזמון?", "מה התחליף הכי קל לסינטה?"
+        </div>
+      )}
+
+      {/* Quick-apply for original audit suggestions */}
+      {auditResult.suggestions?.length>0 && (
+        <div style={{marginBottom:8}}>
+          <div style={{fontSize:11,color:"#666",marginBottom:5}}>החל המלצה אוטומטית:</div>
+          <div style={{display:"flex",flexDirection:"column",gap:5}}>
+            {auditResult.suggestions.map((s,i)=>(
+              <button key={i} disabled={applying} onClick={()=>consultAndApply(s)} style={{display:"flex",alignItems:"center",gap:6,textAlign:"right",fontSize:11,padding:"6px 10px",background:"#22c55e0d",border:"1px solid #22c55e33",borderRadius:9,color:"#9fe8c4",cursor:applying?"not-allowed":"pointer"}}>
+                <span style={{flexShrink:0}}>🤖</span><span style={{flex:1}}>{s}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{maxHeight:260,overflowY:"auto",display:"flex",flexDirection:"column",gap:7,marginBottom:8}}>
+        {msgs.map((m,i)=>(
+          <div key={i} style={{display:"flex",flexDirection:"column",alignItems:m.role==="user"?"flex-start":"flex-end",gap:4}}>
+            <div style={{maxWidth:"88%",background:m.role==="user"?"#1e3a5f":"#0a0a14",border:`1px solid ${m.role==="user"?"#3b82f644":"#2a2a3e"}`,borderRadius:m.role==="user"?"12px 12px 12px 3px":"12px 12px 3px 12px",padding:"8px 11px",fontSize:12,color:"#ddd",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{m.content}</div>
+            {m.role==="assistant" && i===msgs.length-1 && !loading && !applying && !m.content.startsWith("✅") && !m.content.startsWith("🔄") && (
+              <button onClick={()=>consultAndApply(m.content)} style={{fontSize:10,padding:"3px 9px",background:"#3b82f622",border:"1px solid #3b82f644",borderRadius:7,color:"#3b82f6",cursor:"pointer"}}>🔗 העבר לבוט התחליפים ועדכן אוטומטית</button>
+            )}
+          </div>
+        ))}
+        {(loading||applying) && <div style={{display:"flex",justifyContent:"flex-end"}}><div style={{background:"#0a0a14",border:"1px solid #2a2a3e",borderRadius:"12px 12px 3px 12px",padding:"8px 14px",color:"#555",fontSize:16}}>•••</div></div>}
+        <div ref={bottomRef}/>
+      </div>
+
+      <div style={{display:"flex",gap:7}}>
+        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="שאל את הדיאטן..." style={{flex:1,background:"#0a0a14",border:"1px solid #333",borderRadius:10,padding:"9px 12px",color:"#fff",fontSize:12,outline:"none",direction:"rtl"}}/>
+        <button onClick={send} disabled={loading||!input.trim()} style={{background:loading||!input.trim()?"#222":"#3b82f6",border:"none",borderRadius:10,padding:"9px 13px",color:"#fff",fontSize:14,cursor:"pointer"}}>➤</button>
+      </div>
+      <div style={{marginTop:7,display:"flex",gap:5,flexWrap:"wrap"}}>
+        {["למה הציון לא 10?","איך לשפר את התזמון?","יש משהו מיותר בתפריט?"].map(q=>(
+          <button key={q} onClick={()=>setInput(q)} style={{fontSize:11,padding:"4px 9px",background:"#0a0a14",border:"1px solid #222",borderRadius:18,color:"#777",cursor:"pointer"}}>{q}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Garmin Text Analysis ─────────────────────────────────────────────────────
+function GarminAnalysis({ plan, dayIdx }) {
+  const [text, setText] = useState("");
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [dtype, setDtype] = useState("run");
+
+  async function analyze() {
+    if(!text.trim()||loading) return;
+    setLoading(true); setResult(null);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        model:"claude-sonnet-4-20250514", max_tokens:1200,
+        system:`אתה מאמן כושר ודיאטן קליני ספורט, מומחה בניתוח נתוני גרמין. תנתח נתוני ${dtype} ותן המלצות מותאמות לתמיר (35, 101 ק"ג, יעד: ירידה במשקל + חצי מרתון < 2:00 שעות). יום: ${DAY_NAMES[dayIdx]} (${plan.typeLabel}), יעד קלורי: ${plan.kcal} קל'. כתוב בעברית, קצר וברור עם נקודות.`,
+        messages:[{role:"user",content:`נתוני גרמין (${dtype}):\n${text}\n\nאנא נתח ותן:\n1. מה הנתונים אומרים\n2. האם לאמן היום בעצימות גבוהה? (דגל 🟢/🔴)\n3. המלצות תזונה ספציפיות להיום\n4. המלצות לאימון הבא`}]
+      })});
+      const d = await res.json();
+      setResult(d.content?.[0]?.text||"לא הצלחתי לנתח. נסה שוב.");
+    } catch { setResult("שגיאת חיבור. נסה שוב."); }
+    setLoading(false);
+  }
+
+  return (
+    <div>
+      <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>⌚ ניתוח גרמין AI</div>
+      <div style={{fontSize:11,color:"#666",marginBottom:10}}>הדבק נתונים מסיכום הפעילות בגרמין או מהאפליקציה</div>
+      <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+        {[["run","🏃 ריצה"],["sleep","😴 שינה"],["steps","👟 צעדים"],["hrv","💚 HRV"],["general","📊 כללי"]].map(([id,lb])=>(
+          <button key={id} onClick={()=>setDtype(id)} style={{fontSize:11,padding:"5px 10px",borderRadius:20,border:`1px solid ${dtype===id?"#3b82f6":"#333"}`,background:dtype===id?"#3b82f622":"#0a0a14",color:dtype===id?"#3b82f6":"#666",cursor:"pointer"}}>{lb}</button>
+        ))}
+      </div>
+      <textarea value={text} onChange={e=>setText(e.target.value)} placeholder={`הדבק כאן נתוני ${dtype} מהגרמין...\n\nלדוגמה (ריצה):\nמרחק: 5.2 ק"מ\nזמן: 36:45\nקצב ממוצע: 7:04\nדופק ממוצע: 142\nדופק מקסימלי: 158\nקלוריות: 420`}
+        style={{width:"100%",minHeight:120,background:"#0a0a14",border:"1px solid #333",borderRadius:12,padding:12,color:"#ccc",fontSize:12,outline:"none",resize:"vertical",direction:"rtl",lineHeight:1.6,marginBottom:10}}/>
+      <button onClick={analyze} disabled={loading||!text.trim()} style={{width:"100%",background:loading||!text.trim()?"#222":"linear-gradient(135deg,#3b82f6,#8b5cf6)",border:"none",borderRadius:12,padding:12,color:loading||!text.trim()?"#555":"#fff",fontSize:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",marginBottom:10}}>
+        {loading?"⏳ מנתח...":"🔍 נתח עם AI"}
+      </button>
+      {result && <div style={{background:"#1a1a2e",borderRadius:14,padding:14,border:"1px solid #3b82f644",fontSize:12,color:"#ccc",lineHeight:1.8,whiteSpace:"pre-wrap"}}>
+        <div style={{fontSize:11,color:"#3b82f6",fontWeight:600,marginBottom:6}}>⌚ תוצאת ניתוח</div>
+        {result}
+      </div>}
+    </div>
+  );
+}
+
+// ─── Shared: ask substitution bot to compute a meal update from a free-text instruction ──
+async function computeMealUpdate(instruction, plan, dayIdx, mealOverrides) {
+  const mealsStr = Object.entries(plan.meals).map(([k,m])=>{
+    const ov = mealOverrides?.[k];
+    return `${m.name}(${m.time}) [key:${k}]: ${ov?ov.items+" – "+ov.kcal:m.items+" – "+m.kcal}`;
+  }).join("\n");
+  const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+    model:"claude-sonnet-4-20250514",max_tokens:800,
+    system:`אתה בוט תזונה עבור תמיר (35, 101 ק"ג, 177 ס"מ, יעד ירידה במשקל + חצי מרתון).
+יום ${DAY_NAMES[dayIdx]} (${plan.typeLabel}). יעד: ${plan.kcal} קל', חלבון 175-190 גר'.
+ארוחות נוכחיות:\n${mealsStr}
+ערכים ל-100 גר' (לפני בישול): סינטה/שייטל 250קל/26חלבון, פרגית 180קל/22חלבון, סלמון 208קל/20חלבון, שרימפס 99קל/24חלבון, טונה 116קל/26חלבון, ביצה(60גר') 78קל/6חלבון, בטטה 86קל/1.6חלבון, תפו"א 77קל/2חלבון, אורז מלא(יבש) 370קל/7.5חלבון.
+קיבלת המלצה/הוראה מדיאטן קליני (ראה הודעת המשתמש). תרגם אותה לעדכון ארוחה קונקרטי:
+1) חשב גרמים מדויקים 2) בחר את KEY המתאים מהמפתחות: ${Object.keys(plan.meals).join(", ")}
+חובה: ענה בקצרה (2-3 שורות הסבר) ובסוף שורה נפרדת בדיוק:
+📋UPDATE:KEY|תיאור קצר של הארוחה המעודכנת|ערכים תזונתיים`,
+    messages:[{role:"user",content:instruction}]
+  })});
+  const d = await res.json();
+  const text = d.content?.[0]?.text||"";
+  const upd = text.match(/📋\s*UPDATE\s*:\s*(m1|m2|recovery)\s*\|\s*([^|\n]+)\s*\|\s*([^\n]+)/i);
+  return { text: text.replace(/📋\s*UPDATE\s*:.*/is,"").trim(), update: upd ? {key:upd[1].trim(), items:upd[2].trim(), kcal:upd[3].trim()} : null };
+}
+
+// ─── AI Chat ──────────────────────────────────────────────────────────────────
+function AIChat({ plan, dayIdx, onMealUpdate, mealOverrides }) {
+  const todayKey = new Date().toISOString().slice(0,10);
+  const chatKey = `chat_${todayKey}`;
+  const initMsgs = () => { try { const s=JSON.parse(localStorage.getItem(chatKey)||"null"); if(s?.length>0) return s; } catch {} return [{role:"assistant",content:`שלום תמיר! 👋\nספר לי מה יש לך במקרר ואני אחשב בדיוק כמה גרם לאכול כדי להישאר ביעדי היום (${plan.kcal.toLocaleString()} קל').`}]; };
+  const [msgs, setMsgs] = useState(initMsgs);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [pending, setPending] = useState(null);
+  const bottomRef = useRef(null);
+
+  useEffect(()=>{ try{localStorage.setItem(chatKey,JSON.stringify(msgs));}catch{} },[msgs]);
+  useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:"smooth"}); },[msgs]);
+
+  function clearChat() { try{localStorage.removeItem(chatKey);}catch{} setMsgs([{role:"assistant",content:"שיחה חדשה! 🔄 מה יש לך במקרר?"}]); setPending(null); }
+
+  async function send() {
+    if(!input.trim()||loading) return;
+    const userMsg=input.trim(); setInput("");
+    const newMsgs=[...msgs,{role:"user",content:userMsg}]; setMsgs(newMsgs); setLoading(true);
+    const mealsStr=Object.entries(plan.meals).map(([k,m])=>{ const ov=mealOverrides?.[k]; return `${m.name}(${m.time}): ${ov?ov.items+" – "+ov.kcal:m.items+" – "+m.kcal}`; }).join("\n");
+    try {
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        model:"claude-sonnet-4-20250514",max_tokens:1000,
+        system:`אתה בוט תזונה עבור תמיר (35, 101 ק"ג, 177 ס"מ, יעד ירידה במשקל + חצי מרתון).
+יום ${DAY_NAMES[dayIdx]} (${plan.typeLabel}). יעד: ${plan.kcal} קל', חלבון 175-190 גר'.
+ארוחות נוכחיות:\n${mealsStr}
+ערכים ל-100 גר' (לפני בישול): סינטה/שייטל 250קל/26חלבון, פרגית 180קל/22חלבון, סלמון 208קל/20חלבון, שרימפס 99קל/24חלבון, טונה 116קל/26חלבון, ביצה(60גר') 78קל/6חלבון, בטטה 86קל/1.6חלבון, תפו"א 77קל/2חלבון, אורז מלא(יבש) 370קל/7.5חלבון.
+כשמשתמש מציע מה יש לו ורוצה תחליף לארוחה:
+1) חשב גרמים מדויקים לפי הערכים שלעיל 2) השווה לתוכנית המקורית של אותה ארוחה.
+חובה: בסוף התשובה, בשורה נפרדת, כתוב בדיוק (ללא טקסט נוסף בשורה):
+📋UPDATE:KEY|תיאור קצר של הארוחה המעודכנת|ערכים תזונתיים
+כאשר KEY הוא אחד מהמפתחות הקיימים: ${Object.keys(plan.meals).join(", ")}
+התאם את KEY לארוחה שהמשתמש מתכוון אליה (למשל אם מדבר על ארוחת הצהריים/ראשונה -> m1, ארוחת ערב -> m2, שחזור אחרי ריצה -> recovery).
+אם לא בטוח לאיזו ארוחה הכוונה, שאל את המשתמש - ואז אל תכתוב את שורת ה-UPDATE.`,
+        messages:newMsgs.slice(1).map(m=>({role:m.role,content:m.content}))
+      })});
+      const d=await res.json(); const text=d.content?.[0]?.text||"שגיאה.";
+      // Robust UPDATE parsing - allow whitespace/newlines around markers, case variations
+      const upd=text.match(/📋\s*UPDATE\s*:\s*(m1|m2|recovery)\s*\|\s*([^|\n]+)\s*\|\s*([^\n]+)/i);
+      if(upd) {
+        setPending({key:upd[1].trim(),items:upd[2].trim(),kcal:upd[3].trim()});
+      } else if(/\d/.test(text) && (text.includes("גר'")||text.includes("גרם"))) {
+        // Fallback: AI gave a substitution but didn't use the exact format.
+        // Offer to apply the raw AI text as the new meal description for the most likely meal.
+        setPending({key:"m1", items:text.replace(/📋.*$/s,"").trim().slice(0,300), kcal:"לפי חישוב AI (ראה הודעה)", fallback:true});
+      }
+      setMsgs(m=>[...m,{role:"assistant",content:text.replace(/📋\s*UPDATE\s*:.*/is,"").trim()}]);
+    } catch { setMsgs(m=>[...m,{role:"assistant",content:"שגיאת חיבור."}]); }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 230px)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,background:"#1a1a2e",borderRadius:10,padding:"8px 12px",border:"1px solid #f59e0b33"}}>
+        <div style={{fontSize:11,color:"#f59e0b"}}>{DAY_NAMES[dayIdx]} · {plan.kcal.toLocaleString()} קל' · 💧{plan.water}L</div>
+        <button onClick={clearChat} style={{fontSize:11,padding:"3px 9px",background:"none",border:"1px solid #333",borderRadius:7,color:"#555",cursor:"pointer"}}>🗑 נקה</button>
+      </div>
+      {pending && <div style={{background:"#22c55e0d",border:"1px solid #22c55e44",borderRadius:11,padding:10,marginBottom:8}}>
+        <div style={{fontSize:11,color:"#22c55e",fontWeight:700,marginBottom:3}}>🍽️ רוצה לעדכן ארוחה?</div>
+        <div style={{fontSize:12,color:"#ccc",marginBottom:7,lineHeight:1.5}}>{pending.items}<br/><span style={{color:"#888"}}>{pending.kcal}</span></div>
+        <div style={{fontSize:11,color:"#888",marginBottom:5}}>איזו ארוחה לעדכן?</div>
+        <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+          {Object.entries(plan.meals).map(([k,m])=>(
+            <button key={k} onClick={()=>setPending(p=>({...p,key:k}))} style={{fontSize:11,padding:"4px 10px",borderRadius:8,border:`1px solid ${pending.key===k?"#22c55e":"#333"}`,background:pending.key===k?"#22c55e22":"#0a0a14",color:pending.key===k?"#22c55e":"#888",cursor:"pointer"}}>{m.name} ({m.time})</button>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:7}}>
+          <button onClick={()=>{onMealUpdate(pending.key,{items:pending.items,kcal:pending.kcal}); setMsgs(m=>[...m,{role:"assistant",content:`✅ עדכנתי את "${plan.meals[pending.key]?.name}"! תוכל לראות בטאב 'היום'.`}]); setPending(null);}} style={{flex:1,background:"#22c55e",border:"none",borderRadius:9,padding:8,color:"#000",fontSize:12,fontWeight:700,cursor:"pointer"}}>✅ עדכן</button>
+          <button onClick={()=>setPending(null)} style={{flex:1,background:"#222",border:"1px solid #333",borderRadius:9,padding:8,color:"#888",fontSize:12,cursor:"pointer"}}>ביטול</button>
+        </div>
+      </div>}
+      <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:7,paddingBottom:8}}>
+        {msgs.map((m,i)=>(
+          <div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-start":"flex-end"}}>
+            <div style={{maxWidth:"88%",background:m.role==="user"?"#1e3a5f":"#1a1a2e",border:`1px solid ${m.role==="user"?"#3b82f644":"#2a2a3e"}`,borderRadius:m.role==="user"?"13px 13px 13px 3px":"13px 13px 3px 13px",padding:"8px 11px",fontSize:12,color:"#ddd",lineHeight:1.65,whiteSpace:"pre-wrap"}}>{m.content}</div>
+          </div>
+        ))}
+        {loading && <div style={{display:"flex",justifyContent:"flex-end"}}><div style={{background:"#1a1a2e",border:"1px solid #2a2a3e",borderRadius:"13px 13px 3px 13px",padding:"8px 14px",color:"#555",fontSize:16}}>•••</div></div>}
+        <div ref={bottomRef}/>
+      </div>
+      <div style={{display:"flex",gap:7,marginTop:7}}>
+        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="מה יש לך במקרר?" style={{flex:1,background:"#1a1a2e",border:"1px solid #333",borderRadius:11,padding:"10px 13px",color:"#fff",fontSize:13,outline:"none",direction:"rtl"}}/>
+        <button onClick={send} disabled={loading||!input.trim()} style={{background:loading||!input.trim()?"#222":"#3b82f6",border:"none",borderRadius:11,padding:"10px 14px",color:"#fff",fontSize:16,cursor:"pointer"}}>➤</button>
+      </div>
+      <div style={{marginTop:7,display:"flex",gap:5,flexWrap:"wrap"}}>
+        {["יש לי סינטה וביצים","יש לי עוף ובטטה","יש לי ביצים בלבד","יש לי דג ואורז"].map(q=>(
+          <button key={q} onClick={()=>setInput(q)} style={{fontSize:11,padding:"4px 9px",background:"#0a0a14",border:"1px solid #222",borderRadius:18,color:"#777",cursor:"pointer"}}>{q}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Day Type Picker Modal ────────────────────────────────────────────────────
+function DayTypePicker({ dayIdx, current, onSave, onClose }) {
+  const [selected, setSelected] = useState(current);
+  return (
+    <div style={{position:"fixed",inset:0,background:"#000000dd",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200,padding:"0 0 0 0"}}>
+      <div style={{background:"#1a1a2e",borderRadius:"20px 20px 0 0",padding:20,width:"100%",maxWidth:430,border:"1px solid #333"}}>
+        <div style={{fontSize:15,fontWeight:700,marginBottom:4,textAlign:"center"}}>שנה יום {DAY_NAMES[dayIdx]}</div>
+        <div style={{fontSize:11,color:"#666",textAlign:"center",marginBottom:14}}>בחר סוג אימון ליום זה</div>
+        {DAY_TYPE_OPTIONS.map(opt=>(
+          <button key={opt.id} onClick={()=>setSelected(opt.id)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,background:selected===opt.id?`${opt.color}22`:"#0a0a14",border:`1px solid ${selected===opt.id?opt.color:"#222"}`,borderRadius:12,padding:"10px 14px",marginBottom:7,cursor:"pointer",textAlign:"right"}}>
+            <div style={{width:20,height:20,borderRadius:6,background:selected===opt.id?opt.color:"#222",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,flexShrink:0}}>{selected===opt.id?"✓":""}</div>
+            <span style={{fontSize:13,color:selected===opt.id?"#fff":"#999",flex:1}}>{opt.label}</span>
+          </button>
+        ))}
+        <div style={{display:"flex",gap:9,marginTop:4}}>
+          <button onClick={onClose} style={{flex:1,background:"#222",border:"1px solid #333",borderRadius:12,padding:12,color:"#888",fontSize:13,cursor:"pointer"}}>ביטול</button>
+          <button onClick={()=>onSave(selected)} style={{flex:1,background:"#3b82f6",border:"none",borderRadius:12,padding:12,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>שמור</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+function App() {
+  const [data, setData] = useState(load);
+  const [tab, setTab] = useState("today");
+  const [aiSub, setAiSub] = useState("audit");
+  const [selDay, setSelDay] = useState(new Date().getDay());
+  const [wInput, setWInput] = useState("");
+  const [showW, setShowW] = useState(false);
+  const [confetti, setConfetti] = useState(false);
+  const [pickerDay, setPickerDay] = useState(null);
+
+  useEffect(()=>{ save(data); },[data]);
+
+  const todayKey = new Date().toISOString().slice(0,10);
+  const todayIdx = new Date().getDay();
+
+  // Week plan with overrides
+  const weekTypes = data.weekTypes || DEFAULT_WEEK;
+  const getPlan = idx => DAY_TYPES[weekTypes[idx]] || DAY_TYPES[DEFAULT_WEEK[idx]];
+  const todayPlan = getPlan(todayIdx);
+  const selPlan = getPlan(selDay);
+
+  const checks = data[todayKey]||{};
+  const shopChecked = data.shop||{};
+  const mealOverrides = data[`overrides_${todayKey}`]||{};
+
+  function toggle(k) {
+    setData(d=>({...d,[todayKey]:{...(d[todayKey]||{}),[k]:!(d[todayKey]||{})[k]}}));
+    if(!checks[k]){ setConfetti(true); setTimeout(()=>setConfetti(false),1200); }
+  }
+  function toggleShop(k) { setData(d=>({...d,shop:{...(d.shop||{}),[k]:!(d.shop||{})[k]}})); }
+  function resetShop() { setData(d=>({...d,shop:{}})); }
+  function logWeight(w) { setData(d=>({...d,weights:[...(d.weights||[]),{date:todayKey,w:parseFloat(w)}]})); setWInput(""); setShowW(false); }
+  function handleMealUpdate(k,v) { setData(d=>({...d,[`overrides_${todayKey}`]:{...(d[`overrides_${todayKey}`]||{}),[k]:v}})); }
+  function resetOverrides() { setData(d=>{const n={...d};delete n[`overrides_${todayKey}`];return n;}); }
+  function saveWeekType(dayIdx, typeId) { const wt=[...weekTypes]; wt[dayIdx]=typeId; setData(d=>({...d,weekTypes:wt})); setPickerDay(null); }
+
+  const tc = t=>({run:COLORS.run,strength:COLORS.strength,rest:COLORS.rest}[t]||COLORS.rest);
+  const streak=(()=>{let c=0,d=new Date();while(true){const k=d.toISOString().slice(0,10),ch=data[k]||{};if(Object.values(ch).some(Boolean)){c++;d.setDate(d.getDate()-1);}else break;}return c;})();
+  const weights=data.weights||[];
+  const pct=Math.round((Object.values(checks).filter(Boolean).length/5)*100);
+  const shopTotal=SHOP_CATS.reduce((a,c)=>a+c.items.length,0);
+  const shopDone=Object.values(shopChecked).filter(Boolean).length;
+  const shopPct=Math.round((shopDone/shopTotal)*100);
+  const S=s=>s;
+
+  return (
+    <div dir="rtl" style={S({fontFamily:"'Segoe UI',Tahoma,sans-serif",background:COLORS.bg,minHeight:"100vh",color:"#fff",maxWidth:430,margin:"0 auto",position:"relative"})}>
+      <style>{`@keyframes pop{0%{transform:scale(0);opacity:0}30%{transform:scale(1.4);opacity:1}70%{transform:scale(1);opacity:1}100%{transform:scale(0.8);opacity:0}}@keyframes slideIn{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}.btn{transition:all 0.15s;cursor:pointer;}.btn:active{transform:scale(0.96);}`}</style>
+
+      {confetti&&<div style={S({position:"fixed",top:0,left:0,right:0,bottom:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:999,pointerEvents:"none"})}><div style={S({fontSize:80,animation:"pop 1.2s ease forwards"})}>✅</div></div>}
+      {pickerDay!==null && <DayTypePicker dayIdx={pickerDay} current={weekTypes[pickerDay]} onSave={(t)=>saveWeekType(pickerDay,t)} onClose={()=>setPickerDay(null)}/>}
+
+      {/* Header */}
+      <div style={S({background:`linear-gradient(135deg,${tc(todayPlan.type)}22,${COLORS.card})`,padding:"16px 16px 12px",borderBottom:`1px solid ${tc(todayPlan.type)}44`})}>
+        <div style={S({display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8})}>
+          <div>
+            <div style={S({fontSize:11,color:"#777",marginBottom:1})}>{new Date().toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"long"})}</div>
+            <div style={S({fontSize:19,fontWeight:700,marginBottom:4})}>שלום תמיר 👋</div>
+            <button className="btn" onClick={()=>setPickerDay(todayIdx)} style={S({background:`${tc(todayPlan.type)}33`,border:`1px solid ${tc(todayPlan.type)}66`,borderRadius:20,padding:"3px 10px",fontSize:12,color:tc(todayPlan.type),fontWeight:600,display:"inline-flex",alignItems:"center",gap:5})}>
+              {todayPlan.typeLabel} <span style={{fontSize:10,opacity:0.7}}>✏️</span>
+            </button>
+          </div>
+          <div style={S({textAlign:"center"})}><div style={S({fontSize:24,fontWeight:800,color:streak>0?"#f59e0b":"#444"})}>🔥{streak}</div><div style={S({fontSize:10,color:"#666"})}>ימים ברצף</div></div>
+        </div>
+        <div style={S({display:"flex",justifyContent:"space-between",fontSize:11,color:"#666",marginBottom:3})}><span>התקדמות היום</span><span style={S({color:pct===100?"#22c55e":"#fff"})}>{pct}%</span></div>
+        <div style={S({background:"#333",borderRadius:6,height:5,overflow:"hidden"})}><div style={S({width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${tc(todayPlan.type)},${pct===100?"#f59e0b":tc(todayPlan.type)})`,borderRadius:6,transition:"width 0.5s"})}/></div>
+      </div>
+
+      {/* Tabs */}
+      <div style={S({display:"flex",background:COLORS.card,borderBottom:"1px solid #222",overflowX:"auto"})}>
+        {[["today","היום"],["week","השבוע"],["ai","🤖 AI"],["shop","🛒"],["stats","נתונים"]].map(([id,lb])=>(
+          <button key={id} className="btn" onClick={()=>setTab(id)} style={S({flex:1,minWidth:58,padding:"10px 3px",background:"none",border:"none",color:tab===id?"#fff":"#555",fontSize:11,fontWeight:tab===id?700:400,borderBottom:tab===id?`2px solid ${id==="ai"?"#3b82f6":tc(todayPlan.type)}`:"2px solid transparent",whiteSpace:"nowrap"})}>{lb}</button>
+        ))}
+      </div>
+
+      <div style={S({padding:14,paddingBottom:tab==="ai"?14:80,animation:"slideIn 0.3s ease"})}>
+
+        {/* TODAY */}
+        {tab==="today"&&<div>
+          <div style={S({background:COLORS.card,borderRadius:16,padding:14,marginBottom:12,border:"1px solid #222"})}>
+            <div style={S({fontSize:13,fontWeight:700,marginBottom:10,color:"#ddd"})}>✅ צ'קליסט היום</div>
+            {[{k:"workout",lb:`אימון – ${todayPlan.typeLabel}`,ic:"",cl:tc(todayPlan.type)},{k:"meal1",lb:"ארוחה ראשונה – 13:00",ic:"🍽️",cl:COLORS.food},{k:"meal2",lb:"ארוחת ערב – 20:00",ic:"🥩",cl:"#ef4444"},{k:"water",lb:`${todayPlan.water} ליטר מים`,ic:"💧",cl:COLORS.water},{k:"nosweet",lb:"ללא סוכר מוסף",ic:"🚫",cl:"#a855f7"}].map(({k,lb,ic,cl})=>(
+              <button key={k} className="btn" onClick={()=>toggle(k)} style={S({width:"100%",display:"flex",alignItems:"center",gap:10,background:checks[k]?`${cl}22`:"#0a0a14",border:`1px solid ${checks[k]?cl:"#222"}`,borderRadius:12,padding:"9px 12px",marginBottom:7,textAlign:"right"})}>
+                <div style={S({width:22,height:22,borderRadius:7,background:checks[k]?cl:"#222",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,flexShrink:0,transition:"all 0.2s"})}>{checks[k]?"✓":""}</div>
+                <span style={S({fontSize:13,color:checks[k]?"#fff":"#999",flex:1})}>{ic} {lb}</span>
+              </button>
+            ))}
+          </div>
+          <div style={S({background:COLORS.card,borderRadius:16,padding:14,marginBottom:12,border:`1px solid ${tc(todayPlan.type)}44`})}>
+            <div style={S({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8})}>
+              <div style={S({fontSize:13,fontWeight:700,color:tc(todayPlan.type)})}>{todayPlan.training.name}</div>
+              <div style={S({fontSize:11,color:"#777",background:"#111",borderRadius:6,padding:"2px 7px"})}>⏱ {todayPlan.training.duration}</div>
+            </div>
+            {todayPlan.training.exercises.map((ex,i)=>(
+              <div key={i} style={S({display:"flex",alignItems:"center",gap:7,padding:"4px 0",borderBottom:i<todayPlan.training.exercises.length-1?"1px solid #1a1a2e":"none"})}>
+                <div style={S({width:5,height:5,borderRadius:"50%",background:tc(todayPlan.type),flexShrink:0})}/>
+                <span style={S({fontSize:12,color:"#bbb"})}>{ex}</span>
+              </div>
+            ))}
+          </div>
+          <div style={S({background:COLORS.card,borderRadius:16,padding:14,border:"1px solid #f59e0b44"})}>
+            <div style={S({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10})}>
+              <div style={S({fontSize:13,fontWeight:700,color:COLORS.food})}>🍽️ ארוחות היום</div>
+              <div style={S({display:"flex",gap:6})}>
+                {Object.keys(mealOverrides).length>0&&<button className="btn" onClick={resetOverrides} style={S({fontSize:11,padding:"3px 8px",background:"#ef444422",border:"1px solid #ef444444",borderRadius:7,color:"#ef4444"})}>↺ איפוס</button>}
+                <button className="btn" onClick={()=>setTab("ai")} style={S({fontSize:11,padding:"3px 10px",background:"#3b82f622",border:"1px solid #3b82f644",borderRadius:8,color:"#3b82f6"})}>🤖 AI</button>
+              </div>
+            </div>
+            {Object.entries(todayPlan.meals).map(([k,meal],i)=>{
+              const ov=mealOverrides[k];
+              return (<div key={i} style={S({background:ov?"#22c55e0a":"#0a0a14",borderRadius:11,padding:11,marginBottom:7,border:`1px solid ${ov?"#22c55e33":"#1a1a2e"}`})}>
+                <div style={S({display:"flex",justifyContent:"space-between",marginBottom:3})}>
+                  <div style={S({display:"flex",alignItems:"center",gap:6})}>
+                    <span style={S({fontSize:13,fontWeight:600})}>{meal.name}</span>
+                    {ov&&<span style={S({fontSize:10,color:"#22c55e",background:"#22c55e22",borderRadius:5,padding:"1px 5px"})}>🤖 AI</span>}
+                  </div>
+                  <span style={S({fontSize:11,color:COLORS.food,background:"#f59e0b22",borderRadius:6,padding:"1px 7px"})}>{meal.time}</span>
+                </div>
+                <div style={S({fontSize:12,color:ov?"#ccc":"#aaa",marginBottom:3,lineHeight:1.5})}>{ov?ov.items:meal.items}</div>
+                <div style={S({fontSize:11,color:"#555"})}>{ov?ov.kcal:meal.kcal}</div>
+              </div>);
+            })}
+            <div style={S({padding:"6px 10px",background:"#f59e0b11",borderRadius:9,fontSize:11,color:"#f59e0b",textAlign:"center"})}>יעד: {todayPlan.kcal.toLocaleString()} קל' | 💧{todayPlan.water}L | ⚠️ גרמים = לפני בישול</div>
+          </div>
+        </div>}
+
+        {/* WEEK */}
+        {tab==="week"&&<div>
+          <div style={S({display:"flex",gap:5,marginBottom:14,overflowX:"auto",paddingBottom:4})}>
+            {DAY_NAMES.map((d,i)=>(
+              <button key={i} className="btn" onClick={()=>setSelDay(i)} style={S({flexShrink:0,background:selDay===i?tc(getPlan(i).type):"#1a1a2e",border:`1px solid ${selDay===i?tc(getPlan(i).type):"#333"}`,borderRadius:11,padding:"5px 10px",color:selDay===i?"#000":"#777",fontSize:11,fontWeight:selDay===i?700:400,position:"relative"})}>
+                {i===todayIdx&&<div style={S({position:"absolute",top:-3,right:-3,width:7,height:7,borderRadius:"50%",background:"#f59e0b"})}/>}
+                {d}
+              </button>
+            ))}
+          </div>
+          <div style={S({background:COLORS.card,borderRadius:16,padding:14,marginBottom:12,border:`1px solid ${tc(selPlan.type)}44`})}>
+            <div style={S({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8})}>
+              <div style={S({fontSize:15,fontWeight:700})}>{DAY_NAMES[selDay]}</div>
+              <div style={S({display:"flex",alignItems:"center",gap:8})}>
+                <div style={S({background:`${tc(selPlan.type)}33`,borderRadius:20,padding:"3px 10px",fontSize:12,color:tc(selPlan.type),fontWeight:600})}>{selPlan.typeLabel}</div>
+                <button className="btn" onClick={()=>setPickerDay(selDay)} style={S({background:"#222",border:"1px solid #333",borderRadius:8,padding:"4px 9px",color:"#888",fontSize:11})}>✏️ שנה</button>
+              </div>
+            </div>
+            <div style={S({fontSize:13,fontWeight:600,color:tc(selPlan.type),marginBottom:7})}>{selPlan.training.name}</div>
+            {selPlan.training.exercises.map((ex,i)=>(
+              <div key={i} style={S({display:"flex",alignItems:"center",gap:7,padding:"3px 0",fontSize:12,color:"#bbb"})}>
+                <div style={S({width:4,height:4,borderRadius:"50%",background:tc(selPlan.type),flexShrink:0})}/>{ex}
+              </div>
+            ))}
+          </div>
+          <div style={S({background:COLORS.card,borderRadius:16,padding:14,border:"1px solid #333"})}>
+            <div style={S({fontSize:13,fontWeight:700,marginBottom:10,color:COLORS.food})}>🍽️ ארוחות {DAY_NAMES[selDay]}</div>
+            {Object.values(selPlan.meals).map((meal,i)=>(
+              <div key={i} style={S({background:"#0a0a14",borderRadius:10,padding:10,marginBottom:7})}>
+                <div style={S({display:"flex",justifyContent:"space-between",marginBottom:3})}><span style={S({fontSize:13,fontWeight:600})}>{meal.name}</span><span style={S({fontSize:11,color:"#777"})}>{meal.time}</span></div>
+                <div style={S({fontSize:12,color:"#999",lineHeight:1.5})}>{meal.items}</div>
+                <div style={S({fontSize:11,color:"#555",marginTop:2})}>{meal.kcal}</div>
+              </div>
+            ))}
+            <div style={S({padding:"5px 10px",background:"#ffffff08",borderRadius:7,fontSize:11,color:"#555",marginTop:4})}>⚠️ כל הגרמים הם לפני בישול</div>
+          </div>
+        </div>}
+
+        {/* AI */}
+        {tab==="ai"&&<div>
+          <div style={S({display:"flex",gap:6,marginBottom:14})}>
+            {[["audit","🩺 וידוא"],["chat","💬 צ'אט"],["garmin","⌚ גרמין"]].map(([id,lb])=>(
+              <button key={id} className="btn" onClick={()=>setAiSub(id)} style={S({flex:1,padding:"8px 4px",background:aiSub===id?"#1a1a2e":"#0a0a14",border:`1px solid ${aiSub===id?"#3b82f6":"#222"}`,borderRadius:10,color:aiSub===id?"#3b82f6":"#555",fontSize:12,fontWeight:aiSub===id?700:400})}>{lb}</button>
+            ))}
+          </div>
+          {aiSub==="audit"&&<DailyAudit plan={todayPlan} dayIdx={todayIdx} mealOverrides={mealOverrides} onMealUpdate={handleMealUpdate}/>}
+          {aiSub==="chat"&&<AIChat plan={todayPlan} dayIdx={todayIdx} onMealUpdate={handleMealUpdate} mealOverrides={mealOverrides}/>}
+          {aiSub==="garmin"&&<GarminAnalysis plan={todayPlan} dayIdx={todayIdx}/>}
+        </div>}
+
+        {/* SHOP */}
+        {tab==="shop"&&<div>
+          <div style={S({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10})}>
+            <div style={S({fontSize:15,fontWeight:700})}>🛒 קניות שבועיות</div>
+            <button className="btn" onClick={resetShop} style={S({fontSize:12,padding:"5px 12px",background:"#222",border:"1px solid #333",borderRadius:9,color:"#888"})}>אפס</button>
+          </div>
+          <div style={S({marginBottom:12})}>
+            <div style={S({display:"flex",justifyContent:"space-between",fontSize:11,color:"#666",marginBottom:4})}><span>{shopDone} מתוך {shopTotal} פריטים</span><span style={S({color:shopPct===100?"#22c55e":"#fff"})}>{shopPct}%</span></div>
+            <div style={S({background:"#333",borderRadius:5,height:5,overflow:"hidden"})}><div style={S({width:`${shopPct}%`,height:"100%",background:"#22c55e",borderRadius:5,transition:"width 0.4s"})}/></div>
+          </div>
+          {SHOP_CATS.map((cat,ci)=>{
+            const catDone=cat.items.filter((_,ii)=>shopChecked[`${ci}_${ii}`]).length;
+            return (<div key={ci} style={S({background:COLORS.card,borderRadius:14,padding:12,marginBottom:10,border:`1px solid ${cat.color}33`})}>
+              <div style={S({display:"flex",alignItems:"center",gap:8,marginBottom:8})}><span style={S({fontSize:16})}>{cat.icon}</span><span style={S({fontSize:13,fontWeight:700,color:"#ddd",flex:1})}>{cat.name}</span><span style={S({fontSize:11,color:cat.color,background:`${cat.color}22`,borderRadius:6,padding:"2px 8px"})}>{catDone}/{cat.items.length}</span></div>
+              {cat.items.map((item,ii)=>{ const k=`${ci}_${ii}`,done=!!shopChecked[k]; return (
+                <button key={ii} className="btn" onClick={()=>toggleShop(k)} style={S({width:"100%",display:"flex",alignItems:"center",gap:9,background:done?`${cat.color}18`:"#0a0a14",border:`1px solid ${done?cat.color:"#1a1a2e"}`,borderRadius:9,padding:"7px 10px",marginBottom:5,textAlign:"right"})}>
+                  <div style={S({width:18,height:18,borderRadius:5,background:done?cat.color:"#222",border:done?"none":"1px solid #444",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,flexShrink:0,color:"#fff"})}>{done?"✓":""}</div>
+                  <span style={S({fontSize:12,color:done?"#888":"#ccc",textDecoration:done?"line-through":"none",flex:1})}>{item.n}</span>
+                  <span style={S({fontSize:11,color:"#555",flexShrink:0})}>{item.a}</span>
+                </button>
+              );})}
+            </div>);
+          })}
+          <div style={S({background:"#22c55e11",border:"1px solid #22c55e33",borderRadius:12,padding:10,fontSize:12,color:"#22c55e"})}>💡 קנה ביום ראשון · הקפא בשר ודגים שלא תשתמש בהם תוך 2 ימים</div>
+        </div>}
+
+        {/* STATS */}
+        {tab==="stats"&&<div>
+          <div style={S({display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginBottom:12})}>
+            {[{label:"ימים ברצף",value:streak,unit:"🔥",color:"#f59e0b"},{label:"משקל נוכחי",value:weights.length?weights[weights.length-1].w:"—",unit:"ק\"ג",color:"#22c55e"},{label:"יעד ריצה",value:"חצי מרתון",unit:"< 2:00 שעות",color:"#3b82f6"},{label:"יעד משקל",value:"86–89",unit:"ק\"ג",color:"#a855f7"}].map((s,i)=>(
+              <div key={i} style={S({background:COLORS.card,borderRadius:13,padding:13,border:`1px solid ${s.color}44`})}><div style={S({fontSize:11,color:"#777",marginBottom:3})}>{s.label}</div><div style={S({fontSize:22,fontWeight:800,color:s.color})}>{s.value}</div><div style={S({fontSize:11,color:"#555"})}>{s.unit}</div></div>
+            ))}
+          </div>
+
+          {/* Week overview */}
+          <div style={S({background:COLORS.card,borderRadius:16,padding:14,marginBottom:12,border:"1px solid #333"})}>
+            <div style={S({fontSize:13,fontWeight:700,marginBottom:10})}>📅 סקירת השבוע</div>
+            <div style={S({display:"flex",gap:5,flexWrap:"wrap"})}>
+              {DAY_NAMES.map((d,i)=>{ const p=getPlan(i); return (
+                <button key={i} className="btn" onClick={()=>setPickerDay(i)} style={S({background:i===todayIdx?`${tc(p.type)}22`:"#0a0a14",border:`1px solid ${i===todayIdx?tc(p.type):"#222"}`,borderRadius:9,padding:"5px 8px",textAlign:"center",flex:1,minWidth:40})}>
+                  <div style={S({fontSize:10,color:"#666",marginBottom:2})}>{d.slice(0,3)}</div>
+                  <div style={S({fontSize:15})}>{p.type==="run"?"🏃":p.type==="strength"?"💪":"🧘"}</div>
+                </button>
+              );})}
+            </div>
+            <div style={S({fontSize:11,color:"#555",textAlign:"center",marginTop:8})}>לחץ על יום לשינוי סוג האימון</div>
+          </div>
+
+          <div style={S({background:COLORS.card,borderRadius:16,padding:14,marginBottom:12,border:"1px solid #333"})}>
+            <div style={S({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10})}><div style={S({fontSize:13,fontWeight:700})}>📊 יומן משקל</div><button className="btn" onClick={()=>setShowW(true)} style={S({background:"#22c55e33",border:"1px solid #22c55e66",borderRadius:9,padding:"4px 11px",color:"#22c55e",fontSize:12})}>+ הוסף</button></div>
+            {weights.length===0?<div style={S({textAlign:"center",color:"#444",fontSize:13,padding:"16px 0"})}>עדיין אין נתונים – תתחיל לשקול!</div>:(
+              <div>
+                {weights.slice(-6).reverse().map((w,i)=>(
+                  <div key={i} style={S({display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #1a1a2e",fontSize:13})}><span style={S({color:"#777"})}>{new Date(w.date).toLocaleDateString("he-IL")}</span><span style={S({fontWeight:700,color:i===0?"#22c55e":"#ccc"})}>{w.w} ק"ג</span></div>
+                ))}
+                {weights.length>1&&<div style={S({marginTop:9,padding:"8px 10px",background:"#0a0a14",borderRadius:9,textAlign:"center"})}><span style={S({fontSize:12,color:"#777"})}>שינוי מההתחלה: </span><span style={S({fontWeight:700,fontSize:15,color:weights[weights.length-1].w<weights[0].w?"#22c55e":"#ef4444"})}>{(weights[weights.length-1].w-weights[0].w).toFixed(1)} ק"ג</span></div>}
+              </div>
+            )}
+          </div>
+          <div style={S({background:"#a855f711",borderRadius:14,padding:13,border:"1px solid #a855f744"})}>
+            <div style={S({fontSize:12,fontWeight:700,color:"#a855f7",marginBottom:7})}>⚡ כללי ברזל</div>
+            {["לעולם לא פעמיים ברצף","הבוקר נשמר גם בחופשות","קניות ביום ראשון","לא לדון עם עצמך בבוקר","ארוחת שבת = חלק מהתוכנית"].map((r,i)=>(
+              <div key={i} style={S({display:"flex",gap:7,padding:"3px 0",fontSize:12,color:"#ccc"})}><span style={S({color:"#a855f7"})}>◆</span>{r}</div>
+            ))}
+          </div>
+        </div>}
+      </div>
+
+      {showW&&<div style={S({position:"fixed",inset:0,background:"#000000cc",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:24})}>
+        <div style={S({background:COLORS.card,borderRadius:20,padding:22,width:"100%",maxWidth:300,border:"1px solid #333"})}>
+          <div style={S({fontSize:15,fontWeight:700,marginBottom:14,textAlign:"center"})}>⚖️ רישום משקל</div>
+          <input type="number" step="0.1" placeholder="לדוגמה: 99.5" value={wInput} onChange={e=>setWInput(e.target.value)} style={S({width:"100%",background:"#0a0a14",border:"1px solid #333",borderRadius:11,padding:"11px 14px",color:"#fff",fontSize:16,textAlign:"center",outline:"none",marginBottom:11})}/>
+          <div style={S({display:"flex",gap:9})}>
+            <button className="btn" onClick={()=>setShowW(false)} style={S({flex:1,background:"#222",border:"1px solid #333",borderRadius:11,padding:11,color:"#888",fontSize:13})}>ביטול</button>
+            <button className="btn" onClick={()=>wInput&&logWeight(wInput)} style={S({flex:1,background:"#22c55e",border:"none",borderRadius:11,padding:11,color:"#000",fontSize:13,fontWeight:700})}>שמור</button>
+          </div>
+        </div>
+      </div>}
+
+      {tab!=="ai"&&<div style={S({position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:`${COLORS.card}ee`,borderTop:"1px solid #222",padding:"9px 14px",display:"flex",justifyContent:"center",gap:8,fontSize:11,color:"#444"})}>
+        <span>💧 שתה מים</span><span>·</span><span>🔥 שמור רצף</span><span>·</span><span>💪 לא פעמיים</span>
+      </div>}
+    </div>
+  );
+}
+
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+document.getElementById("loading").remove();
+</script>
+
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
