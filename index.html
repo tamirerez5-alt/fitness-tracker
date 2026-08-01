@@ -366,7 +366,29 @@ function GarminAnalysis({ plan, dayIdx }) {
     const file = e.target.files?.[0];
     if(!file) return;
     const reader = new FileReader();
-    reader.onload = ev => setImage({base64: ev.target.result.split(",")[1], mime: file.type, preview: ev.target.result});
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 1400;
+        let { width, height } = img;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          const scale = MAX_DIM / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        setImage({ base64: dataUrl.split(",")[1], mime: "image/jpeg", preview: dataUrl });
+      };
+      img.onerror = () => {
+        // Fallback: use original file as-is if resizing fails
+        setImage({ base64: ev.target.result.split(",")[1], mime: file.type, preview: ev.target.result });
+      };
+      img.src = ev.target.result;
+    };
     reader.readAsDataURL(file);
   }
 
@@ -409,8 +431,12 @@ function GarminAnalysis({ plan, dayIdx }) {
         messages:[{role:"user", content: messageContent}]
       })});
       const d = await res.json();
-      setResult(d.content?.[0]?.text||"לא הצלחתי לנתח. נסה שוב.");
-    } catch { setResult("שגיאת חיבור. נסה שוב."); }
+      if (d.error) {
+        setResult(`שגיאה מה-AI: ${d.error.message || JSON.stringify(d.error)}`);
+      } else {
+        setResult(d.content?.[0]?.text||"לא הצלחתי לנתח. נסה שוב.");
+      }
+    } catch (e) { setResult(`שגיאת חיבור: ${e?.message || e}. נסה שוב, או נסה במצב ⌨️ טקסט.`); }
     setLoading(false);
   }
 
@@ -750,7 +776,7 @@ function App() {
 
       {/* Tabs */}
       <div style={S({display:"flex",background:COLORS.card,borderBottom:"1px solid #222",overflowX:"auto"})}>
-        {[["today","היום"],["week","השבוע"],["ai","🤖 AI"],["shop","🛒"],["stats","נתונים"],["usa","🇺🇸 USA"]].map(([id,lb])=>(
+        {[["today","היום"],["week","השבוע"],["ai","🤖 AI"],["shop","🛒"],["stats","נתונים"]].map(([id,lb])=>(
           <button key={id} className="btn" onClick={()=>setTab(id)} style={S({flex:1,minWidth:58,padding:"10px 3px",background:"none",border:"none",color:tab===id?"#fff":"#555",fontSize:11,fontWeight:tab===id?700:400,borderBottom:tab===id?`2px solid ${id==="ai"?"#3b82f6":tc(todayPlan.type)}`:"2px solid transparent",whiteSpace:"nowrap"})}>{lb}</button>
         ))}
       </div>
@@ -924,87 +950,6 @@ function App() {
         </div>}
 
         {/* USA TAB */}
-        {tab==="usa"&&<div>
-          <div style={S({display:"flex",alignItems:"center",gap:8,marginBottom:14})}>
-            <div style={S({fontSize:24})}>🇺🇸</div>
-            <div>
-              <div style={S({fontSize:15,fontWeight:700})}>מדריך אמריקה – Fair Lawn NJ</div>
-              <div style={S({fontSize:11,color:"#666"})}>4 Vivian Court, Fair Lawn NJ 07410</div>
-            </div>
-          </div>
-
-          {/* Supermarkets */}
-          <div style={S({background:COLORS.card,borderRadius:14,padding:14,marginBottom:12,border:"1px solid #22c55e44"})}>
-            <div style={S({fontSize:13,fontWeight:700,color:"#22c55e",marginBottom:10})}>🛒 סופרים קרובים</div>
-            {[
-              {name:"🥇 ShopRite Fair Lawn",dist:"~5 דק'",hours:"7AM–11PM",tip:"הכי קרוב! כל המוצרים היומיומיים",color:"#22c55e",maps:"https://maps.google.com/?cid=652756571428106520"},
-              {name:"🥈 Trader Joe's – Paramus",dist:"~10 דק'",hours:"8AM–9PM",tip:"מחירים מעולים · Siggi's, buckwheat, שרימפס",color:"#f59e0b",maps:"https://maps.google.com/?cid=10119415620182302994"},
-              {name:"🥉 Whole Foods – Ridgewood",dist:"~10 דק'",hours:"8AM–9PM",tip:"האיכות הגבוהה · Icelandic Provisions Skyr, סטייקים",color:"#3b82f6",maps:"https://maps.google.com/?cid=11835601549657468334"},
-            ].map((s,i)=>(
-              <a key={i} href={s.maps} target="_blank" rel="noreferrer" style={{textDecoration:"none",display:"block",background:"#0a0a14",borderRadius:11,padding:11,marginBottom:8,border:`1px solid ${s.color}33`}}>
-                <div style={S({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3})}>
-                  <span style={S({fontSize:13,fontWeight:600,color:"#fff"})}>{s.name}</span>
-                  <span style={S({fontSize:11,color:s.color,background:`${s.color}22`,borderRadius:6,padding:"1px 7px"})}>{s.dist}</span>
-                </div>
-                <div style={S({fontSize:11,color:"#aaa",marginBottom:2})}>{s.tip}</div>
-                <div style={S({fontSize:10,color:"#555"})}>⏰ {s.hours} · לחץ לניווט 📍</div>
-              </a>
-            ))}
-          </div>
-
-          {/* What to buy where */}
-          <div style={S({background:COLORS.card,borderRadius:14,padding:14,marginBottom:12,border:"1px solid #f59e0b44"})}>
-            <div style={S({fontSize:13,fontWeight:700,color:COLORS.food,marginBottom:10})}>🛍️ מה לקנות איפה</div>
-            {[
-              {store:"ShopRite",icon:"🏪",items:"ביצים, תפוחי אדמה, ירקות, Fage 0%, השלמות יומיומיות"},
-              {store:"Trader Joe's",icon:"🌿",items:"פרגיות (Chicken thighs), שרימפס קפוא, אורז מלא, כוסמת, Siggi's Skyr"},
-              {store:"Whole Foods",icon:"⭐",items:"סטייקים (Sirloin/Flat Iron), סלמון, Icelandic Provisions Skyr"},
-            ].map((s,i)=>(
-              <div key={i} style={S({background:"#0a0a14",borderRadius:10,padding:10,marginBottom:7,border:"1px solid #1a1a2e"})}>
-                <div style={S({fontSize:12,fontWeight:700,color:"#fff",marginBottom:3})}>{s.icon} {s.store}</div>
-                <div style={S({fontSize:11,color:"#aaa"})}>{s.items}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Protein yogurt guide */}
-          <div style={S({background:COLORS.card,borderRadius:14,padding:14,marginBottom:12,border:"1px solid #3b82f644"})}>
-            <div style={S({fontSize:13,fontWeight:700,color:"#3b82f6",marginBottom:10})}>🥛 יוגורט חלבון – מה לחפש</div>
-            {[
-              {name:"🥇 Icelandic Provisions Plain Skyr",protein:"17 גר'",cal:"120 קל'",sugar:"3 גר'",tip:"הכי קרוב לסקיר ישראלי, מרקם עשיר"},
-              {name:"🥈 Siggi's Plain Nonfat",protein:"16 גר'",cal:"110 קל'",sugar:"9 גר'",tip:"מרכיבים מינימליים, קצת חמצמץ"},
-              {name:"🥉 Fage Total 0%",protein:"16 גר'",cal:"100 קל'",sugar:"6 גר'",tip:"הכי זמין, בכל סופר"},
-              {name:"💪 Ratio Protein",protein:"25 גר'",cal:"170 קל'",sugar:"0 גר'",tip:"מקסימום חלבון, יותר יקר"},
-            ].map((y,i)=>(
-              <div key={i} style={S({background:"#0a0a14",borderRadius:10,padding:10,marginBottom:7,border:"1px solid #1a1a2e"})}>
-                <div style={S({fontSize:12,fontWeight:600,color:"#fff",marginBottom:4})}>{y.name}</div>
-                <div style={S({display:"flex",gap:8,flexWrap:"wrap"})}>
-                  <span style={S({fontSize:11,color:"#22c55e",background:"#22c55e22",borderRadius:5,padding:"1px 7px"})}>חלבון {y.protein}</span>
-                  <span style={S({fontSize:11,color:"#f59e0b",background:"#f59e0b22",borderRadius:5,padding:"1px 7px"})}>{y.cal}</span>
-                  <span style={S({fontSize:11,color:"#888",background:"#22222288",borderRadius:5,padding:"1px 7px"})}>סוכר {y.sugar}</span>
-                </div>
-                <div style={S({fontSize:11,color:"#666",marginTop:3})}>{y.tip}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Restaurant guide */}
-          <div style={S({background:COLORS.card,borderRadius:14,padding:14,border:"1px solid #a855f744"})}>
-            <div style={S({fontSize:13,fontWeight:700,color:"#a855f7",marginBottom:10})}>🍽️ מסעדות – איך לבחור חכם</div>
-            {[
-              {type:"Steakhouse 🥩",tip:"Grilled Sirloin / NY Strip + vegetables + baked potato – בדיוק כמו בארץ"},
-              {type:"Chipotle / Mexican 🌯",tip:"Burrito Bowl: chicken/steak + rice + guacamole + salsa – בלי cheese/sour cream"},
-              {type:"Sweetgreen / Dig 🥗",tip:"קערות בריאות עם חלבון + ירק – מהיר, מזין, מתאים"},
-              {type:"Japanese / Korean 🍣",tip:"Sashimi, Grilled fish, Korean BBQ – מתאים מאוד לסגנון שלך"},
-              {type:"מה להימנע ⚠️",tip:"Fried anything, Creamy sauces, Bread basket – הלחם האמריקאי מסוכן 😅"},
-            ].map((r,i)=>(
-              <div key={i} style={S({padding:"7px 0",borderBottom:i<4?"1px solid #1a1a2e":"none"})}>
-                <div style={S({fontSize:12,fontWeight:600,color:"#fff",marginBottom:2})}>{r.type}</div>
-                <div style={S({fontSize:11,color:"#888"})}>{r.tip}</div>
-              </div>
-            ))}
-          </div>
-        </div>}
       </div>
 
       {showW&&<div style={S({position:"fixed",inset:0,background:"#000000cc",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:24})}>
