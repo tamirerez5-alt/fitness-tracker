@@ -135,6 +135,20 @@ const SK = "fitness_tamir_v5";
 function load() { try { return JSON.parse(localStorage.getItem(SK)||"{}"); } catch { return {}; } }
 function save(d) { try { localStorage.setItem(SK,JSON.stringify(d)); } catch {} }
 
+// One-time migration: reset weekTypes to the new Mon/Wed/Sat running schedule
+// without touching checklist history, weights, chat memory, etc.
+function migrateWeekTypes(data) {
+  const MIGRATION_KEY = "migrated_week_schedule_v2";
+  try {
+    if (!localStorage.getItem(MIGRATION_KEY)) {
+      if (data.weekTypes) { delete data.weekTypes; }
+      localStorage.setItem(MIGRATION_KEY, "1");
+      save(data);
+    }
+  } catch {}
+  return data;
+}
+
 // ─── Daily Audit ──────────────────────────────────────────────────────────────
 function DailyAudit({ plan, dayIdx, mealOverrides, onMealUpdate }) {
   const todayKey = new Date().toISOString().slice(0,10);
@@ -667,7 +681,7 @@ function DayTypePicker({ dayIdx, current, onSave, onClose }) {
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 function App() {
-  const [data, setData] = useState(load);
+  const [data, setData] = useState(()=>migrateWeekTypes(load()));
   const [tab, setTab] = useState("today");
   const [aiSub, setAiSub] = useState("audit");
   const [selDay, setSelDay] = useState(new Date().getDay());

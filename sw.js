@@ -1,4 +1,4 @@
-const CACHE_NAME = "fit-tracker-v5";
+const CACHE_NAME = "fit-tracker-v6";
 const ASSETS = [
   "./",
   "./index.html",
@@ -25,8 +25,21 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  // Never cache API calls - always go to network
   if (url.hostname.includes("anthropic.com")) {
+    return;
+  }
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (event.request.method === "GET" && response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
     return;
   }
   event.respondWith(
