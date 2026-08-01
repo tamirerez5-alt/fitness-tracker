@@ -1,34 +1,4 @@
-<!DOCTYPE html>
-<html lang="he" dir="rtl">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"/>
-<meta name="theme-color" content="#0f0f1a"/>
-<meta name="mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="FitTracker"/>
-<link rel="manifest" href="./manifest.json"/>
-<link rel="icon" href="./icon-192.png"/>
-<link rel="apple-touch-icon" href="./apple-touch-icon.png"/>
-<title>מעקב כושר ותזונה - תמיר</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-<style>
-html,body{margin:0;padding:0;background:#0f0f1a;}
-*{-webkit-tap-highlight-color:transparent;}
-#root{min-height:100vh;}
-#loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0f0f1a;color:#888;font-family:'Segoe UI',Tahoma,sans-serif;font-size:14px;flex-direction:column;gap:12px;}
-#loading img{width:64px;height:64px;border-radius:16px;animation:pulse 1.4s ease-in-out infinite;}
-@keyframes pulse{0%,100%{opacity:0.5;transform:scale(0.96)}50%{opacity:1;transform:scale(1)}}
-</style>
-</head>
-<body>
-<div id="loading"><img src="./icon-192.png" alt="טוען"/><div>טוען...</div></div>
-<div id="root"></div>
-<script type="text/babel" data-presets="react" data-type="module">
-const { useState, useEffect, useRef } = React;
+import { useState, useEffect, useRef } from "react";
 
 const COLORS = {
   run:"#22c55e", strength:"#3b82f6", rest:"#a855f7",
@@ -680,7 +650,7 @@ function DayTypePicker({ dayIdx, current, onSave, onClose }) {
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
-function App() {
+export default function App() {
   const [data, setData] = useState(()=>migrateWeekTypes(load()));
   const [tab, setTab] = useState("today");
   const [aiSub, setAiSub] = useState("audit");
@@ -1024,15 +994,3 @@ function App() {
     </div>
   );
 }
-
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);
-document.getElementById("loading").remove();
-</script>
-<script>
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => { navigator.serviceWorker.register("./sw.js").catch(() => {}); });
-}
-</script>
-</body>
-</html>
